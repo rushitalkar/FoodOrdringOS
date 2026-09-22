@@ -3,13 +3,31 @@ import Order from '../models/Order.js';
 import KOT from '../models/KOT.js';
 import Table from '../models/Table.js';
 import Dish from '../models/Dish.js';
+import Company from '../models/Company.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // POST /api/orders/create
 router.post('/create', async (req, res) => {
   try {
-    const { companyId, tableId, customerName, phone, items, orderType } = req.body;
+    const { companyId: requestedCompanyId, companySubdomain, tableId: requestedTableId, tableNo, customerName, phone, items, orderType } = req.body;
+    const company = requestedCompanyId
+      ? await Company.findById(requestedCompanyId)
+      : await Company.findOne({ subdomain: companySubdomain });
+
+    if (!company) return res.status(404).json({ error: 'Restaurant not found' });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'At least one dish is required' });
+    }
+
+    const table = requestedTableId
+      ? await Table.findOne({ _id: requestedTableId, companyId: company._id })
+      : tableNo !== undefined
+        ? await Table.findOne({ companyId: company._id, tableNo: String(tableNo) })
+        : null;
+
+    if (tableNo !== undefined && !table) return res.status(404).json({ error: 'Table not found' });
 
     let subtotal = 0;
     let gstTotal = 0;
@@ -17,7 +35,7 @@ router.post('/create', async (req, res) => {
 
     // Process and calculate prices dynamically
     for (const item of items) {
-      const dish = await Dish.findById(item.dishId);
+      const dish = await Dish.findOne({ _id: item.dishId, companyId: company._id });
       if (!dish) continue;
 
       const itemTotal = dish.price * item.qty;
@@ -36,10 +54,14 @@ router.post('/create', async (req, res) => {
 
     const grandTotal = subtotal + gstTotal;
 
+    if (populatedItems.length === 0) {
+      return res.status(400).json({ error: 'The selected dishes are no longer available' });
+    }
+
     // Create Order
     const order = await Order.create({
-      companyId,
-      tableId: tableId || null,
+      companyId: company._id,
+      tableId: table?._id || null,
       customerName: customerName || 'Guest',
       phone,
       items: populatedItems,
@@ -52,13 +74,13 @@ router.post('/create', async (req, res) => {
     // Create KOT
     const kot = await KOT.create({
       orderId: order._id,
-      tableId: tableId || null,
+      tableId: table?._id || null,
       items: populatedItems.map((i) => ({ dishId: i.dishId, qty: i.qty, status: 'pending' }))
     });
 
     // Update Table status if dine-in
-    if (tableId) {
-      await Table.findByIdAndUpdate(tableId, {
+    if (table) {
+      await Table.findByIdAndUpdate(table._id, {
         status: 'occupied',
         currentOrderId: order._id
       });
@@ -71,10 +93,10 @@ router.post('/create', async (req, res) => {
 });
 
 // GET /api/orders/list?companyId=&status=&tableId=
-router.get('/list', async (req, res) => {
+router.get('/list', authenticateToken, async (req, res) => {
   try {
-    const { companyId, status, tableId } = req.query;
-    if (!companyId) return res.status(400).json({ error: 'companyId is required' });
+    const { status, tableId } = req.query;
+    const companyId = req.user.companyId;
 
     const query = { companyId };
     if (status) query.status = status;
@@ -91,10 +113,9 @@ router.get('/list', async (req, res) => {
 });
 
 // GET /api/orders/stats?companyId=
-router.get('/stats', async (req, res) => {
+router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    const { companyId } = req.query;
-    if (!companyId) return res.status(400).json({ error: 'companyId is required' });
+    const companyId = req.user.companyId;
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -107,7 +128,9 @@ router.get('/stats', async (req, res) => {
     const totalOrdersCount = todayOrders.length;
     const totalRevenue = todayOrders.reduce((sum, ord) => sum + (ord.paymentStatus === 'paid' ? ord.grandTotal : 0), 0);
 
+    const companyOrderIds = todayOrders.map((order) => order._id);
     const pendingKOTCount = await KOT.countDocuments({
+      orderId: { $in: companyOrderIds },
       status: { $in: ['pending', 'preparing'] }
     });
 
@@ -128,12 +151,23 @@ router.get('/stats', async (req, res) => {
 });
 
 // POST /api/orders/status
-router.post('/status', async (req, res) => {
+router.post('/status', authenticateToken, async (req, res) => {
   try {
     const { orderId, status } = req.body; // status: preparing/ready/delivered/billed
+    if (!['preparing', 'ready', 'delivered', 'billed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid order status' });
+    }
 
-    const order = await Order.findByIdAndUpdate(orderId, { status }, { new: true });
+    const order = await Order.findOne({ _id: orderId, companyId: req.user.companyId });
     if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const updates = { status };
+    if (status === 'billed') {
+      updates.paymentStatus = 'paid';
+      updates.paymentMode = 'Cash';
+    }
+    Object.assign(order, updates);
+    await order.save();
 
     // Synchronize KOT Status
     if (['preparing', 'ready'].includes(status)) {

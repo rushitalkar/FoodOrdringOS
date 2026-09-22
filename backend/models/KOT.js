@@ -16,7 +16,7 @@ const kotItemSchema = new mongoose.Schema(
 const kotSchema = new mongoose.Schema(
   {
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-    tableId: { type: mongoose.Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
+    tableId: { type: mongoose.Schema.Types.ObjectId, ref: 'Table', default: null, index: true },
     items: [kotItemSchema],
     status: { 
       type: String, 

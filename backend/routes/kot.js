@@ -1,27 +1,38 @@
 import express from 'express';
 import KOT from '../models/KOT.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// POST /api/kot/status
-router.post('/status', async (req, res) => {
+// GET /api/kot/list
+router.get('/list', authenticateToken, async (req, res) => {
   try {
-    const { kotId, dishId, status } = req.body; // status: preparing/ready
+    const kots = await KOT.find({})
+      .populate({ path: 'orderId', match: { companyId: req.user.companyId }, select: 'companyId items' })
+      .populate('tableId', 'tableNo')
+      .sort({ createdAt: -1 });
 
-    const kot = await KOT.findById(kotId);
+    res.json(kots.filter((kot) => kot.orderId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/kot/status
+router.post('/status', authenticateToken, async (req, res) => {
+  try {
+    const { kotId, status } = req.body; // status: preparing/ready
+
+    const kot = await KOT.findById(kotId).populate({
+      path: 'orderId',
+      match: { companyId: req.user.companyId },
+      select: 'companyId'
+    });
     if (!kot) return res.status(404).json({ error: 'KOT record not found' });
+    if (!kot.orderId) return res.status(404).json({ error: 'KOT record not found' });
 
-    // Update individual item status within array
-    const item = kot.items.find((i) => i.dishId.toString() === dishId);
-    if (item) {
-      item.status = status;
-    }
-
-    // Check if all items share the same status to update master KOT status
-    const allMatching = kot.items.every((i) => i.status === status);
-    if (allMatching) {
-      kot.status = status;
-    }
+    kot.items.forEach((item) => { item.status = status; });
+    kot.status = status;
 
     await kot.save();
     res.json({ message: 'KOT item status updated', kot });

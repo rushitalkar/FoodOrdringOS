@@ -7,7 +7,11 @@ const companySchema = new mongoose.Schema(
     ownerEmail: { type: String, required: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     upiId: { type: String, trim: true },
-    gstPercent: { type: Number, default: 5, min: 0 }
+    gstPercent: { type: Number, default: 5, min: 0 },
+    language: { type: String, enum: ['english', 'marathi', 'hindi'], default: 'english' },
+    whatsappToken: { type: String, trim: true },
+    razorpayKey: { type: String, trim: true },
+    printerEnabled: { type: Boolean, default: false }
   },
   { timestamps: true }
 );
