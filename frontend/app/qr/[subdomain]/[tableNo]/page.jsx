@@ -5,11 +5,10 @@ export default function PublicQRMenu({ params }) {
   const resolvedParams = use(params);
   const { subdomain, tableNo } = resolvedParams;
 
-  const [dishes, setDishes] = useState([
-    { _id: 'd1', title: 'Paneer Tikka', price: 250, category: 'Veg Starters', isVeg: true },
-    { _id: 'd2', title: 'Chicken Biryani', price: 350, category: 'Main Course', isVeg: false },
-    { _id: 'd3', title: 'Veg Hakka Noodles', price: 180, category: 'Chinese', isVeg: true }
-  ]);
+  const [dishes, setDishes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [menuError, setMenuError] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
 
   const [restaurantName, setRestaurantName] = useState(subdomain.replace('-', ' ').toUpperCase());
   const [cart, setCart] = useState([]);
@@ -18,17 +17,20 @@ export default function PublicQRMenu({ params }) {
   const [orderPlaced, setOrderPlaced] = useState(false);
 
   useEffect(() => {
-    // Optional: Fetch actual restaurant info if backend is running
     const fetchRestaurantInfo = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/restaurants/${subdomain}`);
+        const res = await fetch(`http://localhost:5000/api/dishes/public?subdomain=${encodeURIComponent(subdomain)}`);
+        if (!res.ok) throw new Error('Restaurant menu unavailable');
         const data = await res.json();
-        if (res.ok && data.restaurant) {
-          setRestaurantName(data.restaurant.name);
-        }
+        setRestaurantName(data.company.name);
+        setDishes(data.dishes.map((dish) => ({
+          ...dish,
+          category: dish.categoryId?.name || 'Menu'
+        })));
       } catch (err) {
-        // Fallback gracefully to subdomain name if backend is offline or route missing
-        console.log('Using fallback restaurant name from URL subdomain');
+        setMenuError(err.message);
+      } finally {
+        setLoading(false);
       }
     };
     fetchRestaurantInfo();
@@ -43,12 +45,16 @@ export default function PublicQRMenu({ params }) {
     }
   };
 
-  const removeFromCart = (dishId) => {
-    setCart(cart.filter(item => item._id !== dishId));
-  };
-
   const calculateTotal = () => {
     return cart.reduce((total, item) => total + (item.price * item.qty), 0);
+  };
+
+  const calculateGst = () => cart.reduce((total, item) => total + ((item.price * item.qty * (item.gstPercent || 5)) / 100), 0);
+
+  const updateQuantity = (dishId, change) => {
+    setCart((current) => current
+      .map((item) => item._id === dishId ? { ...item, qty: item.qty + change } : item)
+      .filter((item) => item.qty > 0));
   };
 
   const handlePlaceOrder = async (e) => {
@@ -59,25 +65,25 @@ export default function PublicQRMenu({ params }) {
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/orders/place', {
+      const res = await fetch('http://localhost:5000/api/orders/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subdomain,
+          companySubdomain: subdomain,
           tableNo: Number(tableNo),
           customerName,
-          customerPhone,
-          items: cart.map(item => ({ dishId: item._id, title: item.title, price: item.price, qty: item.qty }))
+          phone: customerPhone,
+          items: cart.map(item => ({ dishId: item._id, qty: item.qty }))
         })
       });
 
-      if (res.ok) {
-        setOrderPlaced(true);
-      } else {
-        setOrderPlaced(true); // Fallback success for local testing
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Unable to place order');
       }
+      setOrderPlaced(true);
     } catch (err) {
-      setOrderPlaced(true); // Fallback success for local testing
+      alert(err.message);
     }
   };
 
@@ -110,9 +116,20 @@ export default function PublicQRMenu({ params }) {
         {/* Menu Section */}
         <div className="md:col-span-2 space-y-4">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Explore Menu</h2>
-          {dishes.map(dish => (
+          {!loading && !menuError && dishes.length > 0 && <div className="flex flex-wrap gap-2">
+            {['All', ...new Set(dishes.map((dish) => dish.category))].map((category) => (
+              <button type="button" key={category} onClick={() => setSelectedCategory(category)} className={`rounded-full px-4 py-2 text-xs font-bold ${selectedCategory === category ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-700 hover:bg-orange-100'}`}>
+                {category}
+              </button>
+            ))}
+          </div>}
+          {loading && <p className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">Loading menu...</p>}
+          {!loading && menuError && <p className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{menuError}</p>}
+          {!loading && !menuError && dishes.length === 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">This restaurant has not published any dishes yet.</p>}
+          {!loading && dishes.filter((dish) => selectedCategory === 'All' || dish.category === selectedCategory).map(dish => (
             <div key={dish._id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-center">
               <div>
+                {dish.imageUrl && <img src={`http://localhost:5000${dish.imageUrl}`} alt={dish.title} className="mb-3 h-20 w-20 rounded-lg object-cover" />}
                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-extrabold ${dish.isVeg ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                   {dish.isVeg ? 'VEG 🌱' : 'NON-VEG 🍗'}
                 </span>
@@ -144,17 +161,20 @@ export default function PublicQRMenu({ params }) {
                       <p className="text-xs text-gray-500">₹{item.price} x {item.qty}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-gray-800">₹{item.price * item.qty}</span>
-                      <button onClick={() => removeFromCart(item._id)} className="text-red-500 font-bold text-xs hover:bg-red-50 p-1 rounded">✕</button>
+                      <button type="button" onClick={() => updateQuantity(item._id, -1)} className="rounded bg-gray-100 px-2 py-1 font-bold text-gray-700">-</button>
+                      <span className="min-w-5 text-center font-bold text-gray-800">{item.qty}</span>
+                      <button type="button" onClick={() => updateQuantity(item._id, 1)} className="rounded bg-gray-100 px-2 py-1 font-bold text-gray-700">+</button>
                     </div>
                   </div>
                 ))}
               </div>
 
               <div className="pt-2 border-t flex justify-between font-black text-base text-gray-900">
-                <span>Total:</span>
+                <span>Subtotal:</span>
                 <span className="text-orange-600">₹{calculateTotal()}</span>
               </div>
+              <div className="flex justify-between text-sm text-gray-600"><span>GST:</span><span>₹{calculateGst().toFixed(2)}</span></div>
+              <div className="flex justify-between font-black text-gray-900"><span>Grand total:</span><span className="text-orange-600">₹{(calculateTotal() + calculateGst()).toFixed(2)}</span></div>
 
               <form onSubmit={handlePlaceOrder} className="space-y-3 pt-2">
                 <input 

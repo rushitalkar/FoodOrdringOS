@@ -52,6 +52,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <button onClick={() => router.push('/tables')} className="hover:text-orange-600 transition">Tables</button>
                 <button onClick={() => router.push('/kot')} className="hover:text-orange-600 transition">KOT</button>
                 <button onClick={() => router.push('/orders')} className="hover:text-orange-600 transition">Orders</button>
+                <button onClick={() => router.push('/settings')} className="hover:text-orange-600 transition">Settings</button>
               </div>
               <button 
                 onClick={handleLogout}

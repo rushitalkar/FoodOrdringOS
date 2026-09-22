@@ -3,27 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function KOTPage() {
-  const [kotList, setKotList] = useState([
-    {
-      _id: 'kot1',
-      tableNo: 3,
-      status: 'pending',
-      createdAt: '2026-09-21T12:00:00.000Z',
-      items: [
-        { _id: 'i1', title: 'Paneer Tikka', qty: 2, status: 'pending' },
-        { _id: 'i2', title: 'Veg Hakka Noodles', qty: 1, status: 'pending' }
-      ]
-    },
-    {
-      _id: 'kot2',
-      tableNo: 5,
-      status: 'preparing',
-      createdAt: '2026-09-21T11:35:00.000Z',
-      items: [
-        { _id: 'i3', title: 'Chicken Biryani', qty: 3, status: 'preparing' }
-      ]
-    }
-  ]);
+  const [kotList, setKotList] = useState([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -34,10 +14,38 @@ export default function KOTPage() {
       return;
     }
 
+    const loadKots = () => fetch('http://localhost:5000/api/kot/list', {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Unable to load kitchen tickets');
+      const tickets = await response.json();
+      setKotList(tickets.map((kot) => ({
+        ...kot,
+        tableNo: kot.tableId?.tableNo || 'Takeaway',
+        items: kot.items.map((item) => ({
+          ...item,
+          title: kot.orderId?.items?.find((orderItem) => String(orderItem.dishId) === String(item.dishId))?.title || 'Dish'
+        }))
+      })));
+    }).catch((err) => alert(err.message));
+    loadKots();
+    const intervalId = window.setInterval(loadKots, 10000);
+    return () => window.clearInterval(intervalId);
   }, [router]);
 
-  const updateKOTStatus = (kotId, newStatus) => {
-    setKotList(kotList.map(kot => kot._id === kotId ? { ...kot, status: newStatus } : kot));
+  const updateKOTStatus = async (kotId, newStatus) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:5000/api/kot/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ kotId, status: newStatus })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      alert(data.error || 'Unable to update ticket');
+      return;
+    }
+    setKotList((current) => current.map((item) => item._id === kotId ? { ...item, status: data.kot.status } : item));
   };
 
   const calculateMinutesElapsed = (createdAt) => {

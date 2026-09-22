@@ -1,11 +1,9 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [restaurantName, setRestaurantName] = useState('My Restaurant');
-
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) {
@@ -41,8 +39,8 @@ export default function DashboardPage() {
       {/* Main Content Dashboard Hub */}
       <main className="max-w-7xl mx-auto p-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-black text-gray-900">Welcome Back, Boss! 👋</h2>
-          <p className="text-gray-600 text-sm mt-1">Select any module below to demonstrate the live workflow seamlessly.</p>
+          <h2 className="text-3xl font-black text-gray-900">Restaurant Operations</h2>
+          <p className="text-gray-600 text-sm mt-1">Manage your menu, tables, kitchen, orders, and customer ordering flow.</p>
         </div>
 
         {/* Navigation Modules Grid */}
@@ -84,7 +82,7 @@ export default function DashboardPage() {
               🧾
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">Orders & Billing</h3>
-            <p className="text-sm text-gray-500 mb-4">Calculate subtotal, 5% GST, and process table settlements[cite: 1].</p>
+            <p className="text-sm text-gray-500 mb-4">Calculate totals, process payments, and settle table orders.</p>
             <span className="text-orange-600 text-sm font-bold flex items-center gap-1">Open Module →</span>
           </div>
 
@@ -94,7 +92,7 @@ export default function DashboardPage() {
               🔗
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">Customer QR Menu</h3>
-            <p className="text-sm text-gray-500 mb-4">Simulate customer scanning Table #1 QR code to place direct orders[cite: 1].</p>
+            <p className="text-sm text-gray-500 mb-4">Preview the customer menu and place a table order.</p>
             <span className="text-orange-600 text-sm font-bold flex items-center gap-1">Test Customer View →</span>
           </div>
 

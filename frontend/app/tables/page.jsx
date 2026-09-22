@@ -3,26 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function TablesPage() {
-  const [tables, setTables] = useState([
-    {
-      _id: 't1',
-      tableNo: 1,
-      status: 'vacant',
-      qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?data=https://yourdomain.com/qr/mysubdomain/1&size=150x150'
-    },
-    {
-      _id: 't2',
-      tableNo: 2,
-      status: 'occupied',
-      qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?data=https://yourdomain.com/qr/mysubdomain/2&size=150x150'
-    },
-    {
-      _id: 't3',
-      tableNo: 3,
-      status: 'billed',
-      qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?data=https://yourdomain.com/qr/mysubdomain/3&size=150x150'
-    }
-  ]);
+  const [tables, setTables] = useState([]);
   const [newTableNo, setNewTableNo] = useState('');
   const router = useRouter();
 
@@ -34,17 +15,29 @@ export default function TablesPage() {
       return;
     }
 
+    fetch('http://localhost:5000/api/tables/list', {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Unable to load tables');
+      setTables(await response.json());
+    }).catch((err) => alert(err.message));
   }, [router]);
 
   const handleAddTable = async (e) => {
     e.preventDefault();
-    const tableNum = Number(newTableNo);
-    const generatedQr = `https://api.qrserver.com/v1/create-qr-code/?data=https://yourdomain.com/qr/mysubdomain/${tableNum}&size=150x150`;
-
-    // Add locally for instant UI preview
-    setTables([...tables, { _id: Date.now().toString(), tableNo: tableNum, status: 'vacant', qrCodeUrl: generatedQr }]);
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:5000/api/tables/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ tableNo: newTableNo, domain: window.location.origin })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      alert(data.error || 'Unable to create table');
+      return;
+    }
+    setTables((current) => [...current, data]);
     setNewTableNo('');
-    alert(`Table #${tableNum} created with QR Code successfully!`);
   };
 
   return (
